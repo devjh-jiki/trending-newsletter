@@ -1,0 +1,11 @@
+{
+  "name": "trending-newsletter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Trending 한글 번역·3관점 요약 뉴스레터",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.mjs"
+  }
+}
