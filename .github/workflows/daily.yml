@@ -30,6 +30,8 @@ jobs:
           # 공식 API 사용 시 (게이트웨이 없을 때만 fallback)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # 디스코드 #newsletter 발송
+          DISCORD_WEBHOOK_NEWSLETTER: ${{ secrets.DISCORD_WEBHOOK_NEWSLETTER }}
           SINCE: daily
           LIMIT: "10"
         run: node src/index.mjs
