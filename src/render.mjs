@@ -8,7 +8,7 @@
 
 /**
  * @param {Item[]} items
- * @param {{ date?: string, since?: string }} [opts]
+ * @param {{ date?: string, since?: string, trend?: string }} [opts]
  * @returns {string}
  */
 export function renderNewsletter(items, opts = {}) {
@@ -19,6 +19,12 @@ export function renderNewsletter(items, opts = {}) {
   const lines = [];
   lines.push(`# GitHub Trending — ${date} (${sinceLabel})`);
   lines.push("");
+  if (opts.trend) {
+    lines.push("## 📊 오늘의 흐름");
+    lines.push("");
+    lines.push(opts.trend);
+    lines.push("");
+  }
   lines.push(
     "프론트엔드/개발자 / 프로덕트 창업자·PM / 홍보·마케팅 3가지 관점으로 정리했습니다.",
   );

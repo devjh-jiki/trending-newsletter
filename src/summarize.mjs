@@ -40,28 +40,73 @@ export async function summarizeRepo(repo) {
 설명: ${repo.description || "(설명 없음)"}
 별: ${repo.stars} (오늘 +${repo.starsToday})`;
 
+  if (!hasLLM()) return fallbackSummary(repo);
+  const text = await callLLM(SYSTEM_PROMPT, userText, { json: true });
+  return parseJsonLoose(text);
+}
+
+const TREND_PROMPT = `너는 GitHub 트렌딩 목록을 보고 "요즘 GitHub에서 주로 다뤄지는 흐름"을
+한국어로 2~3문장으로 요약하는 애널리스트다. 개별 레포 나열이 아니라 공통된 주제·기술 흐름
+(예: AI 에이전트, 로컬 LLM, 특정 언어/프레임워크 부상 등)을 짚는다. 과장 없이 담백하게 쓴다.
+JSON 없이 평문으로만 답한다.`;
+
+/**
+ * 트렌딩 목록 전체를 보고 오늘의 흐름을 한 문단으로 요약한다.
+ * @param {TrendingRepo[]} repos
+ * @returns {Promise<string>}  실패/키없음 시 빈 문자열
+ */
+export async function summarizeTrend(repos) {
+  if (!hasLLM() || repos.length === 0) return "";
+  const list = repos
+    .slice(0, 15)
+    .map((r) => `- ${r.repo} (${r.language || "N/A"}): ${r.description || ""}`)
+    .join("\n");
+  try {
+    const text = await callLLM(TREND_PROMPT, `오늘의 트렌딩 목록:\n${list}`, { json: false });
+    return text.trim();
+  } catch {
+    return "";
+  }
+}
+
+/** LLM 사용 가능 여부 */
+function hasLLM() {
+  return !!(
+    (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.OPENAI_API_KEY
+  );
+}
+
+/**
+ * 저수준 LLM 호출. 설정된 제공자를 골라 텍스트를 반환한다.
+ * @param {string} system
+ * @param {string} user
+ * @param {{ json?: boolean }} [opts]
+ * @returns {Promise<string>}
+ */
+async function callLLM(system, user, opts = {}) {
   if (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) {
-    return callOpenAICompatible(userText, {
+    return callOpenAICompatible(system, user, {
       baseURL: process.env.LLM_BASE_URL.replace(/\/$/, ""),
       apiKey: process.env.LLM_API_KEY,
-      model: process.env.LLM_MODEL || "claude-haiku-4-5",
+      model: process.env.LLM_MODEL || "default",
+      json: opts.json,
     });
   }
   if (process.env.ANTHROPIC_API_KEY) {
-    return callAnthropic(userText);
+    return callAnthropic(system, user);
   }
-  if (process.env.OPENAI_API_KEY) {
-    return callOpenAICompatible(userText, {
-      baseURL: "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-    });
-  }
-  return fallbackSummary(repo);
+  return callOpenAICompatible(system, user, {
+    baseURL: "https://api.openai.com/v1",
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    json: opts.json,
+  });
 }
 
-/** @param {string} userText @returns {Promise<Summary>} */
-async function callAnthropic(userText) {
+/** @param {string} system @param {string} user @returns {Promise<string>} */
+async function callAnthropic(system, user) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -72,32 +117,32 @@ async function callAnthropic(userText) {
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest",
       max_tokens: 512,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userText }],
+      system,
+      messages: [{ role: "user", content: user }],
     }),
   });
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const text = data?.content?.[0]?.text ?? "";
-  return parseJsonLoose(text);
+  return data?.content?.[0]?.text ?? "";
 }
 
 /**
- * OpenAI 호환 Chat Completions API 호출 (공식 OpenAI / 커스텀 엔드포인트 공용)
- * @param {string} userText
- * @param {{ baseURL: string, apiKey: string, model: string }} cfg
- * @returns {Promise<Summary>}
+ * OpenAI 호환 Chat Completions 호출 (공식 OpenAI / 커스텀 엔드포인트 공용)
+ * @param {string} system
+ * @param {string} user
+ * @param {{ baseURL: string, apiKey: string, model: string, json?: boolean }} cfg
+ * @returns {Promise<string>}
  */
-async function callOpenAICompatible(userText, cfg) {
+async function callOpenAICompatible(system, user, cfg) {
   const body = {
     model: cfg.model,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userText },
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   };
-  // OpenAI 공식은 JSON 모드를 지원. 커스텀 엔드포인트는 미지원일 수 있어 OpenAI일 때만 요청.
-  if (cfg.baseURL.includes("api.openai.com")) {
+  // OpenAI 공식만 JSON 모드 지원. 커스텀 엔드포인트는 미지원일 수 있어 OpenAI일 때만.
+  if (cfg.json && cfg.baseURL.includes("api.openai.com")) {
     body.response_format = { type: "json_object" };
   }
 
@@ -113,8 +158,7 @@ async function callOpenAICompatible(userText, cfg) {
     throw new Error(`LLM API ${res.status} (${cfg.baseURL}): ${await res.text()}`);
   }
   const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content ?? "";
-  return parseJsonLoose(text);
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
 /** LLM 없을 때 fallback @param {TrendingRepo} repo @returns {Summary} */

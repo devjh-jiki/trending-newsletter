@@ -13,7 +13,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTrending } from "./fetch-trending.mjs";
-import { summarizeRepo } from "./summarize.mjs";
+import { summarizeRepo, summarizeTrend } from "./summarize.mjs";
 import { renderNewsletter } from "./render.mjs";
 import { sendDiscordEmbed } from "./discord-notify.mjs";
 
@@ -63,8 +63,12 @@ async function main() {
     }
   }
 
+  // 오늘의 전체 트렌드 한 문단 요약 (최상단용)
+  const trend = await summarizeTrend(repos);
+  if (trend) console.log(`[trend] ${trend.slice(0, 60)}…`);
+
   const date = new Date().toISOString().slice(0, 10);
-  const md = renderNewsletter(items, { date, since });
+  const md = renderNewsletter(items, { date, since, trend });
 
   await mkdir(ARCHIVE_DIR, { recursive: true });
   const outPath = join(ARCHIVE_DIR, `${date}.md`);
@@ -72,7 +76,7 @@ async function main() {
   console.log(`[done] ${outPath} (${md.length} bytes)`);
 
   // 디스코드 발송 (webhook 있을 때만)
-  await maybeSendDiscord(items, date, since);
+  await maybeSendDiscord(items, date, since, trend);
 }
 
 /**
@@ -80,8 +84,9 @@ async function main() {
  * @param {{repo:any,summary:any}[]} items
  * @param {string} date
  * @param {string} since
+ * @param {string} [trend]
  */
-async function maybeSendDiscord(items, date, since) {
+async function maybeSendDiscord(items, date, since, trend = "") {
   const webhook = process.env.DISCORD_WEBHOOK_NEWSLETTER;
   if (!webhook) {
     console.log("[discord] DISCORD_WEBHOOK_NEWSLETTER 없음 — 발송 생략");
@@ -91,27 +96,30 @@ async function maybeSendDiscord(items, date, since) {
   const sinceLabel = { daily: "오늘", weekly: "이번 주", monthly: "이번 달" }[since] || since;
   const top = items.slice(0, 5);
 
-  // embed 1개에 상위 5개를 필드로. 각 필드 value는 1024자 제한이라 잘라서 넣는다.
-  const fields = top.map((it, i) => ({
-    name: `${i + 1}. ${it.repo.repo} ${it.repo.language ? `(${it.repo.language})` : ""}`,
-    value: clip(
-      `${it.summary.koDescription}\n🧑‍💻 ${it.summary.developer}\n🚀 ${it.summary.product}\n📣 ${it.summary.marketing}\n[repo](${it.repo.url}) · ⭐ ${it.repo.stars.toLocaleString()}`,
-      1024,
-    ),
-    inline: false,
-  }));
-
   // 아카이브 링크 (Actions 환경이면 GITHUB_REPOSITORY 사용)
   const repoSlug = process.env.GITHUB_REPOSITORY || "devjh-jiki/trending-newsletter";
   const archiveUrl = `https://github.com/${repoSlug}/blob/main/archive/${date}.md`;
 
+  // 핵심만: 레포당 한 줄 (이름·언어·⭐ + 한 줄 설명). 자세한 3관점은 archive 에.
+  const list = top
+    .map((it, i) => {
+      const lang = it.repo.language ? ` · ${it.repo.language}` : "";
+      const desc = clip(it.summary.koDescription, 100);
+      return `**${i + 1}. [${it.repo.repo}](${it.repo.url})**${lang} · ⭐${it.repo.stars.toLocaleString()}\n${desc}`;
+    })
+    .join("\n\n");
+
+  const description = clip(
+    `${trend ? `📊 **오늘의 흐름**\n${trend}\n\n` : ""}${list}\n\n📄 [자세히 보기 (전체 ${items.length}개 · 3관점 요약)](${archiveUrl})`,
+    4096, // embed description 한도
+  );
+
   try {
     await sendDiscordEmbed(webhook, {
       title: `📰 GitHub Trending — ${date} (${sinceLabel})`,
-      description: `프론트엔드/개발자 · 창업자/PM · 홍보/마케팅 관점 요약 · 총 ${items.length}개\n전체 보기: [archive](${archiveUrl})`,
       url: archiveUrl,
       color: 0x5865f2,
-      fields,
+      description,
       footer: { text: "trending-newsletter" },
     });
     console.log("[discord] 발송 완료");
