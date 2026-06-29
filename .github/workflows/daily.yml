@@ -19,12 +19,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm install --no-save
       - name: Generate newsletter
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: npm start
+          SINCE: daily
+          LIMIT: "10"
+        run: node src/index.mjs
       - name: Commit archive
         run: |
           git config user.name "github-actions[bot]"
