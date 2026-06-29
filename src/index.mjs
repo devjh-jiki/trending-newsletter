@@ -31,8 +31,19 @@ async function main() {
     process.exit(1);
   }
 
-  const hasLLM = !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
-  console.log(`[summarize] LLM ${hasLLM ? "사용" : "없음(fallback)"}`);
+  const hasLLM = !!(
+    (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.OPENAI_API_KEY
+  );
+  const llmLabel = process.env.LLM_BASE_URL
+    ? `gateway(${process.env.LLM_MODEL || "claude-haiku-4-5"})`
+    : process.env.ANTHROPIC_API_KEY
+      ? "anthropic"
+      : process.env.OPENAI_API_KEY
+        ? "openai"
+        : "없음(fallback)";
+  console.log(`[summarize] LLM ${llmLabel}`);
 
   const items = [];
   for (const repo of repos) {

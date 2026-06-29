@@ -1,12 +1,14 @@
 name: Daily newsletter
 
-# 매일 GitHub Trending 을 수집해 한글 번역·요약 뉴스레터를 생성한다.
-# 처음에는 수동 트리거로 검증 후 schedule 을 활성화하세요.
+# 평일(월~금) 오전 9시 KST 에 GitHub Trending 을 수집해
+# 한글 번역·3관점 요약 뉴스레터를 생성하고 archive 에 커밋한다.
+# LLM 은 사내 게이트웨이(LLM_BASE_URL + LLM_API_KEY)를 사용한다.
 
 on:
   workflow_dispatch: {}
-  # schedule:
-  #   - cron: "0 23 * * *"  # 매일 08:00 KST (UTC+9)
+  schedule:
+    # 09:00 KST = 00:00 UTC, 평일만 (월=1 ~ 금=5)
+    - cron: "0 0 * * 1-5"
 
 permissions:
   contents: write
@@ -21,11 +23,23 @@ jobs:
           node-version: "20"
       - name: Generate newsletter
         env:
+          # 사내 게이트웨이 (OpenAI 호환)
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-haiku-4-5' }}
+          # 공식 API 사용 시 (게이트웨이 없을 때만 fallback)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SINCE: daily
           LIMIT: "10"
         run: node src/index.mjs
+      - name: Commit archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add archive/ || true
+          git diff --cached --quiet || git commit -m "chore: $(date +%F) 뉴스레터 아카이브"
+          git push || true
       - name: Commit archive
         run: |
           git config user.name "github-actions[bot]"

@@ -1,6 +1,15 @@
 // LLM으로 trending 레포를 한글 번역 + 3관점(프론트엔드/창업자/마케터) 요약한다.
-// ANTHROPIC_API_KEY 또는 OPENAI_API_KEY 중 있는 것을 사용한다.
-// 키가 없으면 LLM 없이 원문 기반 fallback 요약을 반환한다(파이프라인은 항상 동작).
+//
+// 우선순위:
+//   1) LLM_BASE_URL + LLM_API_KEY  → OpenAI 호환 게이트웨이(사내 hicare 등)
+//   2) ANTHROPIC_API_KEY           → Anthropic 공식
+//   3) OPENAI_API_KEY              → OpenAI 공식
+//   4) 키 없음                     → 원문 기반 fallback (파이프라인은 항상 동작)
+//
+// 사내 게이트웨이 예:
+//   LLM_BASE_URL=https://ai-api.hicare.net/v1
+//   LLM_API_KEY=sk-...
+//   LLM_MODEL=claude-haiku-4-5
 
 /**
  * @typedef {import("./fetch-trending.mjs").TrendingRepo} TrendingRepo
@@ -31,11 +40,22 @@ export async function summarizeRepo(repo) {
 설명: ${repo.description || "(설명 없음)"}
 별: ${repo.stars} (오늘 +${repo.starsToday})`;
 
+  if (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) {
+    return callOpenAICompatible(userText, {
+      baseURL: process.env.LLM_BASE_URL.replace(/\/$/, ""),
+      apiKey: process.env.LLM_API_KEY,
+      model: process.env.LLM_MODEL || "claude-haiku-4-5",
+    });
+  }
   if (process.env.ANTHROPIC_API_KEY) {
     return callAnthropic(userText);
   }
   if (process.env.OPENAI_API_KEY) {
-    return callOpenAI(userText);
+    return callOpenAICompatible(userText, {
+      baseURL: "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    });
   }
   return fallbackSummary(repo);
 }
@@ -62,24 +82,36 @@ async function callAnthropic(userText) {
   return parseJsonLoose(text);
 }
 
-/** @param {string} userText @returns {Promise<Summary>} */
-async function callOpenAI(userText) {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+/**
+ * OpenAI 호환 Chat Completions API 호출 (공식 OpenAI / 사내 게이트웨이 공용)
+ * @param {string} userText
+ * @param {{ baseURL: string, apiKey: string, model: string }} cfg
+ * @returns {Promise<Summary>}
+ */
+async function callOpenAICompatible(userText, cfg) {
+  const body = {
+    model: cfg.model,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userText },
+    ],
+  };
+  // OpenAI 공식은 JSON 모드를 지원. 게이트웨이는 미지원일 수 있어 OpenAI일 때만 요청.
+  if (cfg.baseURL.includes("api.openai.com")) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch(`${cfg.baseURL}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      authorization: `Bearer ${cfg.apiKey}`,
     },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userText },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    throw new Error(`LLM API ${res.status} (${cfg.baseURL}): ${await res.text()}`);
+  }
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content ?? "";
   return parseJsonLoose(text);
