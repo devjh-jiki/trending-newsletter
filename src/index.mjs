@@ -34,13 +34,8 @@ async function main() {
     process.exit(1);
   }
 
-  const hasLLM = !!(
-    (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) ||
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.OPENAI_API_KEY
-  );
   const llmLabel = process.env.LLM_BASE_URL
-    ? `gateway(${process.env.LLM_MODEL || "claude-haiku-4-5"})`
+    ? `llm(${process.env.LLM_MODEL || "default"})`
     : process.env.ANTHROPIC_API_KEY
       ? "anthropic"
       : process.env.OPENAI_API_KEY
@@ -60,9 +55,9 @@ async function main() {
         repo,
         summary: {
           koDescription: repo.description,
-          frontend: "(요약 실패)",
-          founder: "(요약 실패)",
-          marketer: "(요약 실패)",
+          developer: "(요약 실패)",
+          product: "(요약 실패)",
+          marketing: "(요약 실패)",
         },
       });
     }
@@ -100,7 +95,7 @@ async function maybeSendDiscord(items, date, since) {
   const fields = top.map((it, i) => ({
     name: `${i + 1}. ${it.repo.repo} ${it.repo.language ? `(${it.repo.language})` : ""}`,
     value: clip(
-      `${it.summary.koDescription}\n🧑‍💻 ${it.summary.frontend}\n[repo](${it.repo.url}) · ⭐ ${it.repo.stars.toLocaleString()}`,
+      `${it.summary.koDescription}\n🧑‍💻 ${it.summary.developer}\n🚀 ${it.summary.product}\n📣 ${it.summary.marketing}\n[repo](${it.repo.url}) · ⭐ ${it.repo.stars.toLocaleString()}`,
       1024,
     ),
     inline: false,
@@ -113,7 +108,7 @@ async function maybeSendDiscord(items, date, since) {
   try {
     await sendDiscordEmbed(webhook, {
       title: `📰 GitHub Trending — ${date} (${sinceLabel})`,
-      description: `프론트엔드 / 창업자 / 마케터 관점 요약 · 총 ${items.length}개\n전체 보기: [archive](${archiveUrl})`,
+      description: `프론트엔드/개발자 · 창업자/PM · 홍보/마케팅 관점 요약 · 총 ${items.length}개\n전체 보기: [archive](${archiveUrl})`,
       url: archiveUrl,
       color: 0x5865f2,
       fields,

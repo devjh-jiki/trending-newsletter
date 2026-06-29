@@ -20,7 +20,7 @@ export function renderNewsletter(items, opts = {}) {
   lines.push(`# GitHub Trending — ${date} (${sinceLabel})`);
   lines.push("");
   lines.push(
-    "프론트엔드 개발자 / 프로덕트 창업자 / 기술 블로거·마케터 3가지 관점으로 정리했습니다.",
+    "프론트엔드/개발자 / 프로덕트 창업자·PM / 홍보·마케팅 3가지 관점으로 정리했습니다.",
   );
   lines.push("");
   lines.push(`> 총 ${items.length}개 레포 · 출처: https://github.com/trending`);
@@ -45,9 +45,9 @@ export function renderNewsletter(items, opts = {}) {
       lines.push(`> ${summary.koDescription}`);
       lines.push("");
     }
-    lines.push(`- 🧑‍💻 **프론트엔드**: ${summary.frontend}`);
-    lines.push(`- 🚀 **창업자**: ${summary.founder}`);
-    lines.push(`- ✍️ **블로거/마케터**: ${summary.marketer}`);
+    lines.push(`- 🧑‍💻 **프론트엔드/개발자**: ${summary.developer}`);
+    lines.push(`- 🚀 **창업자/PM**: ${summary.product}`);
+    lines.push(`- 📣 **홍보/마케팅**: ${summary.marketing}`);
     lines.push("");
     lines.push("---");
     lines.push("");
