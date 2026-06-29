@@ -93,7 +93,6 @@ async function maybeSendDiscord(items, date, since, trend = "") {
     return;
   }
 
-  const sinceLabel = { daily: "오늘", weekly: "이번 주", monthly: "이번 달" }[since] || since;
   const top = items.slice(0, 5);
 
   // 아카이브 링크 (Actions 환경이면 GITHUB_REPOSITORY 사용)
@@ -103,9 +102,9 @@ async function maybeSendDiscord(items, date, since, trend = "") {
   // 핵심만: 레포당 한 줄 (이름·언어·⭐ + 한 줄 설명). 자세한 3관점은 archive 에.
   const list = top
     .map((it, i) => {
-      const lang = it.repo.language ? ` · ${it.repo.language}` : "";
+      const lang = it.repo.language ? `(${it.repo.language})` : "";
       const desc = clip(it.summary.koDescription, 100);
-      return `**${i + 1}. [${it.repo.repo}](${it.repo.url})**${lang} · ⭐${it.repo.stars.toLocaleString()}\n${desc}`;
+      return `**${i + 1}. [${it.repo.repo}](${it.repo.url})${lang} ⭐${it.repo.stars.toLocaleString()}**\n${desc}`;
     })
     .join("\n\n");
 
@@ -116,7 +115,7 @@ async function maybeSendDiscord(items, date, since, trend = "") {
 
   try {
     await sendDiscordEmbed(webhook, {
-      title: `📰 GitHub Trending — ${date} (${sinceLabel})`,
+      title: `📰 GitHub Trending(${date})`,
       url: archiveUrl,
       color: 0x5865f2,
       description,

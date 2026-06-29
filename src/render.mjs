@@ -13,11 +13,9 @@
  */
 export function renderNewsletter(items, opts = {}) {
   const date = opts.date || new Date().toISOString().slice(0, 10);
-  const since = opts.since || "daily";
-  const sinceLabel = { daily: "오늘", weekly: "이번 주", monthly: "이번 달" }[since] || since;
 
   const lines = [];
-  lines.push(`# GitHub Trending — ${date} (${sinceLabel})`);
+  lines.push(`# GitHub Trending(${date})`);
   lines.push("");
   if (opts.trend) {
     lines.push("## 📊 오늘의 흐름");
@@ -36,16 +34,9 @@ export function renderNewsletter(items, opts = {}) {
 
   items.forEach((item, i) => {
     const { repo, summary } = item;
-    lines.push(`## ${i + 1}. [${repo.repo}](${repo.url})`);
-    lines.push("");
-    const meta = [
-      repo.language ? `\`${repo.language}\`` : null,
-      `⭐ ${repo.stars.toLocaleString()}`,
-      repo.starsToday ? `(${sinceLabel} +${repo.starsToday.toLocaleString()})` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    lines.push(meta);
+    const lang = repo.language ? `(${repo.language})` : "";
+    const today = repo.starsToday ? ` (+${repo.starsToday.toLocaleString()})` : "";
+    lines.push(`## ${i + 1}. [${repo.repo}](${repo.url})${lang} ⭐${repo.stars.toLocaleString()}${today}`);
     lines.push("");
     if (summary.koDescription) {
       lines.push(`> ${summary.koDescription}`);
