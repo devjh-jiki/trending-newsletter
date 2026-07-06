@@ -7,9 +7,11 @@ name: Daily newsletter
 on:
   workflow_dispatch: {}
   schedule:
-    # 09:07 KST = 00:07 UTC, 평일만 (월=1 ~ 금=5)
-    # 정각(00:00)은 부하가 몰려 지연·스킵되기 쉬우므로 7분 비켜서 등록한다.
-    - cron: "7 0 * * 1-5"
+    # 09:30 KST = 00:30 UTC, 평일만 (월=1 ~ 금=5)
+    # 주의: GitHub Actions schedule 은 UTC 기준이며, 정시 실행을 보장하지 않는다.
+    # 특히 정각(00분) 근처는 전 세계 작업이 몰려 수십 분~수 시간 지연될 수 있다.
+    # 30분에 등록해 부하 피크(정각)를 피하면서 목표(09:30 KST)에 맞춘다.
+    - cron: "30 0 * * 1-5"
 
 permissions:
   contents: write
