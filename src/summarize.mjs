@@ -1,8 +1,8 @@
 // LLM으로 trending 레포를 한글 번역 + 3관점(프론트엔드/창업자·PM/마케팅) 요약한다.
 //
 // 우선순위:
-//   1) LLM_BASE_URL + LLM_API_KEY  → OpenAI 호환 엔드포인트
-//   2) ANTHROPIC_API_KEY           → Anthropic 공식
+//   1) ANTHROPIC_API_KEY           → Anthropic(Claude) 공식 — 기본 사용
+//   2) LLM_BASE_URL + LLM_API_KEY  → OpenAI 호환 엔드포인트
 //   3) OPENAI_API_KEY              → OpenAI 공식
 //   4) 키 없음                     → 원문 기반 fallback (파이프라인은 항상 동작)
 //
@@ -72,8 +72,8 @@ export async function summarizeTrend(repos) {
 /** LLM 사용 가능 여부 */
 function hasLLM() {
   return !!(
-    (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) ||
     process.env.ANTHROPIC_API_KEY ||
+    (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) ||
     process.env.OPENAI_API_KEY
   );
 }
@@ -86,6 +86,9 @@ function hasLLM() {
  * @returns {Promise<string>}
  */
 async function callLLM(system, user, opts = {}) {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return callAnthropic(system, user);
+  }
   if (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) {
     return callOpenAICompatible(system, user, {
       baseURL: process.env.LLM_BASE_URL.replace(/\/$/, ""),
@@ -93,9 +96,6 @@ async function callLLM(system, user, opts = {}) {
       model: process.env.LLM_MODEL || "default",
       json: opts.json,
     });
-  }
-  if (process.env.ANTHROPIC_API_KEY) {
-    return callAnthropic(system, user);
   }
   return callOpenAICompatible(system, user, {
     baseURL: "https://api.openai.com/v1",
@@ -115,7 +115,7 @@ async function callAnthropic(system, user) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest",
+      model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
       max_tokens: 512,
       system,
       messages: [{ role: "user", content: user }],

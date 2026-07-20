@@ -2,7 +2,7 @@
 // fetch → summarize(LLM, 없으면 fallback) → render markdown → archive 저장 → (선택) 디스코드 발송
 //
 // 환경변수:
-//   LLM_BASE_URL/LLM_API_KEY/LLM_MODEL 또는 ANTHROPIC_API_KEY/OPENAI_API_KEY
+//   ANTHROPIC_API_KEY(+ANTHROPIC_MODEL) 우선, 없으면 LLM_BASE_URL/LLM_API_KEY/LLM_MODEL 또는 OPENAI_API_KEY
 //   SINCE     = daily | weekly | monthly   (기본 daily)
 //   LANGUAGE  = 예: javascript, typescript  (기본 전체)
 //   LIMIT     = 정수 (기본 10)
@@ -34,10 +34,10 @@ async function main() {
     process.exit(1);
   }
 
-  const llmLabel = process.env.LLM_BASE_URL
-    ? `llm(${process.env.LLM_MODEL || "default"})`
-    : process.env.ANTHROPIC_API_KEY
-      ? "anthropic"
+  const llmLabel = process.env.ANTHROPIC_API_KEY
+    ? `anthropic(${process.env.ANTHROPIC_MODEL || "claude-haiku-4-5"})`
+    : process.env.LLM_BASE_URL
+      ? `llm(${process.env.LLM_MODEL || "default"})`
       : process.env.OPENAI_API_KEY
         ? "openai"
         : "없음(fallback)";
