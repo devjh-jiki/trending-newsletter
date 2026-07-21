@@ -13,7 +13,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTrending } from "./fetch-trending.mjs";
-import { summarizeRepo, summarizeTrend } from "./summarize.mjs";
+import { fallbackSummary, summarizeRepo, summarizeTrend } from "./summarize.mjs";
 import { renderNewsletter } from "./render.mjs";
 import { sendDiscordEmbed } from "./discord-notify.mjs";
 
@@ -51,15 +51,7 @@ async function main() {
       console.log(`  ✓ ${repo.repo}`);
     } catch (err) {
       console.warn(`  ✗ ${repo.repo}: ${err.message}`);
-      items.push({
-        repo,
-        summary: {
-          koDescription: repo.description,
-          developer: "(요약 실패)",
-          product: "(요약 실패)",
-          marketing: "(요약 실패)",
-        },
-      });
+      items.push({ repo, summary: fallbackSummary(repo) });
     }
   }
 
@@ -70,8 +62,10 @@ async function main() {
   const date = new Date().toISOString().slice(0, 10);
   const md = renderNewsletter(items, { date, since, trend });
 
-  await mkdir(ARCHIVE_DIR, { recursive: true });
-  const outPath = join(ARCHIVE_DIR, `${date}.md`);
+  // weekly 는 archive/weekly/ 아래로 분리 저장한다.
+  const outDir = since === "weekly" ? join(ARCHIVE_DIR, "weekly") : ARCHIVE_DIR;
+  await mkdir(outDir, { recursive: true });
+  const outPath = join(outDir, `${date}.md`);
   await writeFile(outPath, md, "utf8");
   console.log(`[done] ${outPath} (${md.length} bytes)`);
 
@@ -94,12 +88,14 @@ async function maybeSendDiscord(items, date, since, trend = "") {
   }
 
   const top = items.slice(0, 5);
+  const weekly = since === "weekly";
 
   // 아카이브 링크 (Actions 환경이면 GITHUB_REPOSITORY 사용)
   const repoSlug = process.env.GITHUB_REPOSITORY || "devjh-jiki/trending-newsletter";
-  const archiveUrl = `https://github.com/${repoSlug}/blob/main/archive/${date}.md`;
+  const archivePath = weekly ? `archive/weekly/${date}.md` : `archive/${date}.md`;
+  const archiveUrl = `https://github.com/${repoSlug}/blob/main/${archivePath}`;
 
-  // 핵심만: 레포당 한 줄 (이름·언어·⭐ + 한 줄 설명). 자세한 3관점은 archive 에.
+  // 핵심만: 레포당 한 줄 (이름·언어·⭐ + 한 줄 설명). 자세한 정리는 archive 에.
   const list = top
     .map((it, i) => {
       const lang = it.repo.language ? `(${it.repo.language})` : "";
@@ -109,13 +105,13 @@ async function maybeSendDiscord(items, date, since, trend = "") {
     .join("\n\n");
 
   const description = clip(
-    `${trend ? `📊 **오늘의 흐름**\n${trend}\n\n` : ""}${list}\n\n📄 [자세히 보기 (전체 ${items.length}개 · 3관점 요약)](${archiveUrl})`,
+    `${trend ? `📊 **${weekly ? "이번 주" : "오늘"}의 흐름**\n${trend}\n\n` : ""}${list}\n\n📄 [자세히 보기 (전체 ${items.length}개 · 직군별 추천 + Quick Start)](${archiveUrl})`,
     4096, // embed description 한도
   );
 
   try {
     await sendDiscordEmbed(webhook, {
-      title: `📰 GitHub Trending(${date})`,
+      title: `${weekly ? "📆 GitHub Weekly" : "📰 GitHub"} Trending(${date})`,
       url: archiveUrl,
       color: 0x5865f2,
       description,

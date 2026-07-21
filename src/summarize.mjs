@@ -1,4 +1,4 @@
-// LLM으로 trending 레포를 한글 번역 + 3관점(프론트엔드/창업자·PM/마케팅) 요약한다.
+// LLM으로 trending 레포를 한글 번역 + 한 단락 정리·Quick Start·직군 태그로 요약한다.
 //
 // 우선순위:
 //   1) ANTHROPIC_API_KEY           → Anthropic(Claude) 공식 — 기본 사용
@@ -14,21 +14,33 @@
 /**
  * @typedef {import("./fetch-trending.mjs").TrendingRepo} TrendingRepo
  * @typedef {Object} Summary
- * @property {string} koDescription  - 한글 번역 설명
- * @property {string} developer      - 프론트엔드/개발자 관점
- * @property {string} product        - 프로덕트 창업자·PM 관점
- * @property {string} marketing      - 홍보·마케팅 관점
+ * @property {string} koDescription    - 한글 번역 설명
+ * @property {string} overview         - 무엇인지/왜 떴는지/어디에 쓰면 좋은지 한 단락
+ * @property {string} quickStart       - PoC용 설치·실행 셸 명령 (불가능하면 "")
+ * @property {string[]} roles          - 적합 직군 id 배열 (ROLE_LABELS 키)
+ * @property {string} recommendReason  - 해당 직군에 왜 좋은지 한 줄
  */
+
+/** 직군 id → 표시 라벨. render 에서 직군별 추천 섹션에 사용한다. */
+export const ROLE_LABELS = {
+  frontend: "🧑‍💻 프론트엔드",
+  backend: "⚙️ 백엔드/인프라",
+  data: "📊 데이터/AI",
+  founder: "🚀 창업자",
+  pm: "📋 PM/기획",
+  marketing: "📣 홍보/마케팅",
+};
 
 const SYSTEM_PROMPT = `너는 GitHub 트렌딩 레포를 한국어로 정리하는 에디터다.
 각 레포에 대해 아래 JSON 형식으로만 응답한다. 과장/홍보성 표현은 쓰지 않고 사실 위주로 간결하게 쓴다.
 {
   "koDescription": "레포 설명을 자연스러운 한국어로 1~2문장 번역",
-  "developer": "프론트엔드/개발자가 실무에 어떻게 쓸 수 있는지 1문장",
-  "product": "프로덕트를 만드는 창업자·PM 관점에서 제품/시장 시사점 1문장",
-  "marketing": "홍보·마케팅 관점에서 콘텐츠 소재/트렌드 포인트 1문장"
+  "overview": "이 레포가 무엇인지, 왜 주목받는지, 어떤 상황에 쓰면 좋은지 3~4문장 한 단락",
+  "quickStart": "바로 PoC 해볼 수 있는 셸 명령 2~4줄 (예: git clone/npm i/실행). 책·강의·목록 모음처럼 실행할 게 없으면 빈 문자열",
+  "roles": "이 레포를 실제로 써먹기 좋은 직군 배열. frontend/backend/data/founder/pm/marketing 중에서만 고르고, 억지로 채우지 말 것 (0~3개)",
+  "recommendReason": "위 직군에게 왜 유용한지 한 줄 (roles 가 비면 빈 문자열)"
 }
-해당 관점에서 별 의미가 없으면 "특별한 시사점 없음" 이라고 쓴다.`;
+quickStart 는 README 를 못 본 상태이므로 확신할 수 있는 일반적인 명령만 쓴다.`;
 
 /**
  * @param {TrendingRepo} repo
@@ -42,7 +54,31 @@ export async function summarizeRepo(repo) {
 
   if (!hasLLM()) return fallbackSummary(repo);
   const text = await callLLM(SYSTEM_PROMPT, userText, { json: true });
-  return parseJsonLoose(text);
+  return normalizeSummary(parseJsonLoose(text), repo);
+}
+
+/**
+ * LLM 응답을 Summary 스키마로 정규화한다. (필드 누락/타입 오류 방어)
+ * @param {any} raw
+ * @param {TrendingRepo} repo
+ * @returns {Summary}
+ */
+function normalizeSummary(raw, repo) {
+  const roles = Array.isArray(raw.roles)
+    ? raw.roles.filter((r) => typeof r === "string" && r in ROLE_LABELS)
+    : [];
+  return {
+    koDescription: str(raw.koDescription) || repo.description || "(설명 없음)",
+    overview: str(raw.overview),
+    quickStart: str(raw.quickStart),
+    roles,
+    recommendReason: roles.length ? str(raw.recommendReason) : "",
+  };
+}
+
+/** @param {unknown} v @returns {string} */
+function str(v) {
+  return typeof v === "string" ? v.trim() : "";
 }
 
 const TREND_PROMPT = `너는 GitHub 트렌딩 목록을 보고 "요즘 GitHub에서 주로 다뤄지는 흐름"을
@@ -116,14 +152,24 @@ async function callAnthropic(system, user) {
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
-      max_tokens: 512,
+      max_tokens: 1024,
       system,
       messages: [{ role: "user", content: user }],
     }),
   });
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data?.content?.[0]?.text ?? "";
+  // content 는 블록 배열이며 text 외 타입이 섞일 수 있다. text 블록만 모아서 합친다.
+  const text = (data?.content ?? [])
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+  if (!text) {
+    throw new Error(
+      `Anthropic 응답에 text 블록 없음 (stop_reason=${data?.stop_reason}): ${JSON.stringify(data?.content)?.slice(0, 200)}`,
+    );
+  }
+  return text;
 }
 
 /**
@@ -162,16 +208,18 @@ async function callOpenAICompatible(system, user, cfg) {
 }
 
 /** LLM 없을 때 fallback @param {TrendingRepo} repo @returns {Summary} */
-function fallbackSummary(repo) {
+export function fallbackSummary(repo) {
   return {
     koDescription: repo.description || "(설명 없음 — 번역 생략)",
-    developer: "(LLM 키 없음 — 요약 생략)",
-    product: "(LLM 키 없음 — 요약 생략)",
-    marketing: "(LLM 키 없음 — 요약 생략)",
+    overview: "(LLM 키 없음 — 요약 생략)",
+    quickStart: "",
+    roles: [],
+    recommendReason: "",
   };
 }
 
-/** 응답에서 JSON만 안전하게 추출 @param {string} text @returns {Summary} */
+/** 응답에서 JSON만 안전하게 추출. 실패 시 throw 해서 호출부가 실패로 처리하게 한다.
+ * @param {string} text @returns {any} */
 function parseJsonLoose(text) {
   try {
     return JSON.parse(text);
@@ -184,11 +232,6 @@ function parseJsonLoose(text) {
         /* fall through */
       }
     }
-    return {
-      koDescription: text.slice(0, 200) || "(요약 파싱 실패)",
-      developer: "(파싱 실패)",
-      product: "(파싱 실패)",
-      marketing: "(파싱 실패)",
-    };
+    throw new Error(`요약 JSON 파싱 실패: ${text.slice(0, 200)}`);
   }
 }
