@@ -6,6 +6,7 @@
   "description": "GitHub Trending 한글 요약 뉴스레터 (직군별 추천 + Quick Start)",
   "license": "MIT",
   "scripts": {
-    "start": "node src/index.mjs"
+    "start": "node src/index.mjs",
+    "test": "node --test"
   }
 }

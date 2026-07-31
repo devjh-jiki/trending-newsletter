@@ -79,11 +79,32 @@ export function renderNewsletter(items, opts = {}) {
  */
 function renderRoleRecommendations(items) {
   const lines = [];
+  const validRoleIds = new Set(Object.keys(ROLE_LABELS));
+  const classified = items.map((it) => ({
+    it,
+    roles: [
+      ...new Set(
+        (Array.isArray(it.summary.roles) ? it.summary.roles : []).filter((role) =>
+          validRoleIds.has(role),
+        ),
+      ),
+    ],
+  }));
+
+  const commonPicks = classified.filter(({ roles }) => roles.length >= 2);
+  if (commonPicks.length) {
+    lines.push("- **🌐 공통**");
+    for (const { it } of commonPicks) {
+      const reason = it.summary.recommendReason ? ` — ${it.summary.recommendReason}` : "";
+      lines.push(`  - [${it.repo.repo}](${it.repo.url})${reason}`);
+    }
+  }
+
   for (const [roleId, label] of Object.entries(ROLE_LABELS)) {
-    const picks = items.filter((it) => it.summary.roles?.includes(roleId));
+    const picks = classified.filter(({ roles }) => roles.length === 1 && roles[0] === roleId);
     if (picks.length === 0) continue;
     lines.push(`- **${label}**`);
-    for (const it of picks) {
+    for (const { it } of picks) {
       const reason = it.summary.recommendReason ? ` — ${it.summary.recommendReason}` : "";
       lines.push(`  - [${it.repo.repo}](${it.repo.url})${reason}`);
     }
