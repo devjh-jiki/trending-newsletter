@@ -1,7 +1,5 @@
 // 수집·요약된 레포 목록을 뉴스레터 Markdown 문자열로 렌더링한다.
 
-import { ROLE_LABELS } from "./summarize.mjs";
-
 /**
  * @typedef {import("./fetch-trending.mjs").TrendingRepo} TrendingRepo
  * @typedef {import("./summarize.mjs").Summary} Summary
@@ -27,14 +25,6 @@ export function renderNewsletter(items, opts = {}) {
     lines.push("");
   }
 
-  const recommend = renderRoleRecommendations(items);
-  if (recommend.length) {
-    lines.push("## 👥 직군별 추천");
-    lines.push("");
-    lines.push(...recommend);
-    lines.push("");
-  }
-
   lines.push(`> 총 ${items.length}개 레포 · 출처: https://github.com/trending`);
   lines.push("");
   lines.push("---");
@@ -50,16 +40,22 @@ export function renderNewsletter(items, opts = {}) {
       lines.push(`> ${summary.koDescription}`);
       lines.push("");
     }
-    if (summary.overview) {
-      lines.push(summary.overview);
+    if (summary.summary) {
+      lines.push("**무엇인가**");
+      lines.push("");
+      lines.push(summary.summary);
       lines.push("");
     }
-    if (summary.quickStart) {
-      lines.push("**⚡ 바로 써보기**");
+    if (summary.useCases) {
+      lines.push("**어디에 쓰나**");
       lines.push("");
-      lines.push("```bash");
-      lines.push(summary.quickStart);
-      lines.push("```");
+      lines.push(summary.useCases);
+      lines.push("");
+    }
+    if (summary.considerations) {
+      lines.push("**살펴볼 점**");
+      lines.push("");
+      lines.push(summary.considerations);
       lines.push("");
     }
     lines.push("---");
@@ -72,42 +68,58 @@ export function renderNewsletter(items, opts = {}) {
 }
 
 /**
- * 각 레포의 roles 태그를 직군 기준으로 역집계해 추천 목록을 만든다.
- * 걸리는 레포가 없는 직군은 생략한다.
+ * Discord embed 한도에 맞춰 상위 5개 레포의 상세 분석을 렌더링한다.
  * @param {Item[]} items
- * @returns {string[]} markdown lines
+ * @param {{ date: string, since?: string, trend?: string, archiveUrl: string }} opts
+ * @returns {{ title: string, url: string, color: number, description: string, footer: { text: string } }}
  */
-function renderRoleRecommendations(items) {
-  const lines = [];
-  const validRoleIds = new Set(Object.keys(ROLE_LABELS));
-  const classified = items.map((it) => ({
-    it,
-    roles: [
-      ...new Set(
-        (Array.isArray(it.summary.roles) ? it.summary.roles : []).filter((role) =>
-          validRoleIds.has(role),
-        ),
-      ),
-    ],
-  }));
-
-  const commonPicks = classified.filter(({ roles }) => roles.length >= 2);
-  if (commonPicks.length) {
-    lines.push("- **🌐 공통**");
-    for (const { it } of commonPicks) {
-      const reason = it.summary.recommendReason ? ` — ${it.summary.recommendReason}` : "";
-      lines.push(`  - [${it.repo.repo}](${it.repo.url})${reason}`);
-    }
+export function renderDiscordEmbed(items, opts) {
+  const weekly = opts.since === "weekly";
+  const sections = [];
+  if (opts.trend) {
+    sections.push(
+      `📊 **${weekly ? "이번 주" : "오늘"}의 흐름**\n${plainDiscordText(opts.trend)}`,
+    );
   }
 
-  for (const [roleId, label] of Object.entries(ROLE_LABELS)) {
-    const picks = classified.filter(({ roles }) => roles.length === 1 && roles[0] === roleId);
-    if (picks.length === 0) continue;
-    lines.push(`- **${label}**`);
-    for (const { it } of picks) {
-      const reason = it.summary.recommendReason ? ` — ${it.summary.recommendReason}` : "";
-      lines.push(`  - [${it.repo.repo}](${it.repo.url})${reason}`);
-    }
-  }
-  return lines;
+  const list = items
+    .slice(0, 5)
+    .map((item, index) => {
+      const lang = item.repo.language ? `(${item.repo.language})` : "";
+      const lines = [
+        `**${index + 1}. [${item.repo.repo}](${item.repo.url})${lang} ⭐${item.repo.stars.toLocaleString()}**`,
+      ];
+      if (item.summary.summary) lines.push(plainDiscordText(item.summary.summary));
+      if (item.summary.useCases) {
+        lines.push(`**어디에 쓰나** ${plainDiscordText(item.summary.useCases)}`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
+  if (list) sections.push(list);
+
+  const body = sections.join("\n\n");
+  const archive = `📄 [전체 상세 분석 보기 (전체 ${items.length}개)](${opts.archiveUrl})`;
+  const footer = `${body ? "\n\n" : ""}${archive}`;
+  const description = `${clip(body, 4096 - footer.length)}${footer}`;
+
+  return {
+    title: `${weekly ? "📆 GitHub Weekly" : "📰 GitHub"} Trending(${opts.date})`,
+    url: opts.archiveUrl,
+    color: 0x5865f2,
+    description,
+    footer: { text: "trending-newsletter" },
+  };
+}
+
+/** @param {string} text @param {number} max */
+function clip(text, max) {
+  if (text.length <= max) return text;
+  if (max <= 1) return "…".slice(0, Math.max(0, max));
+  return `${text.slice(0, max - 1)}…`;
+}
+
+/** 외부 분석의 코드 포맷이 뒤따르는 archive 링크를 감싸지 않게 한다. @param {string} text */
+function plainDiscordText(text) {
+  return text.replace(/`/g, "");
 }

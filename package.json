@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "GitHub Trending 한글 요약 뉴스레터 (직군별 추천 + Quick Start)",
+  "description": "GitHub Trending README 기반 한글 상세 분석 뉴스레터",
   "license": "MIT",
   "scripts": {
     "start": "node src/index.mjs",

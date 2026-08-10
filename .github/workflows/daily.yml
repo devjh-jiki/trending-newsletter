@@ -1,7 +1,7 @@
 name: Daily newsletter
 
 # 평일(월~금) 오전 9시 30분 KST 에 GitHub Trending 을 수집해
-# 한글 요약(직군별 추천 + Quick Start) 뉴스레터를 생성하고 archive 에 커밋한다.
+# README 기반 한글 상세 분석 뉴스레터를 생성하고 archive 에 커밋한다.
 # 요약은 Anthropic(Claude) 공식 API 를 사용한다. (ANTHROPIC_API_KEY 시크릿 필요)
 
 on:
@@ -29,6 +29,8 @@ jobs:
           # Anthropic(Claude) 공식 API
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
+          # 공개 레포 README 조회 rate limit 완화
+          GITHUB_TOKEN: ${{ github.token }}
           # 디스코드 #newsletter 발송
           DISCORD_WEBHOOK_NEWSLETTER: ${{ secrets.DISCORD_WEBHOOK_NEWSLETTER }}
           SINCE: daily

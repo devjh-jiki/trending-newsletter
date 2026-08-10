@@ -3,6 +3,7 @@
 //
 // 환경변수:
 //   ANTHROPIC_API_KEY(+ANTHROPIC_MODEL) 우선, 없으면 LLM_BASE_URL/LLM_API_KEY/LLM_MODEL 또는 OPENAI_API_KEY
+//   GITHUB_TOKEN = 있으면 README 조회 인증에 사용 (Actions 내장 토큰 권장)
 //   SINCE     = daily | weekly | monthly   (기본 daily)
 //   LANGUAGE  = 예: javascript, typescript  (기본 전체)
 //   LIMIT     = 정수 (기본 10)
@@ -13,8 +14,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTrending } from "./fetch-trending.mjs";
-import { fallbackSummary, summarizeRepo, summarizeTrend } from "./summarize.mjs";
-import { renderNewsletter } from "./render.mjs";
+import { summarizeRepos } from "./process-repos.mjs";
+import { summarizeTrend } from "./summarize.mjs";
+import { renderDiscordEmbed, renderNewsletter } from "./render.mjs";
 import { sendDiscordEmbed } from "./discord-notify.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,17 +45,7 @@ async function main() {
         : "없음(fallback)";
   console.log(`[summarize] LLM ${llmLabel}`);
 
-  const items = [];
-  for (const repo of repos) {
-    try {
-      const summary = await summarizeRepo(repo);
-      items.push({ repo, summary });
-      console.log(`  ✓ ${repo.repo}`);
-    } catch (err) {
-      console.warn(`  ✗ ${repo.repo}: ${err.message}`);
-      items.push({ repo, summary: fallbackSummary(repo) });
-    }
-  }
+  const items = await summarizeRepos(repos);
 
   // 오늘의 전체 트렌드 한 문단 요약 (최상단용)
   const trend = await summarizeTrend(repos);
@@ -87,7 +79,6 @@ async function maybeSendDiscord(items, date, since, trend = "") {
     return;
   }
 
-  const top = items.slice(0, 5);
   const weekly = since === "weekly";
 
   // 아카이브 링크 (Actions 환경이면 GITHUB_REPOSITORY 사용)
@@ -95,37 +86,13 @@ async function maybeSendDiscord(items, date, since, trend = "") {
   const archivePath = weekly ? `archive/weekly/${date}.md` : `archive/${date}.md`;
   const archiveUrl = `https://github.com/${repoSlug}/blob/main/${archivePath}`;
 
-  // 핵심만: 레포당 한 줄 (이름·언어·⭐ + 한 줄 설명). 자세한 정리는 archive 에.
-  const list = top
-    .map((it, i) => {
-      const lang = it.repo.language ? `(${it.repo.language})` : "";
-      const desc = clip(it.summary.koDescription, 100);
-      return `**${i + 1}. [${it.repo.repo}](${it.repo.url})${lang} ⭐${it.repo.stars.toLocaleString()}**\n${desc}`;
-    })
-    .join("\n\n");
-
-  const description = clip(
-    `${trend ? `📊 **${weekly ? "이번 주" : "오늘"}의 흐름**\n${trend}\n\n` : ""}${list}\n\n📄 [자세히 보기 (전체 ${items.length}개 · 직군별 추천 + Quick Start)](${archiveUrl})`,
-    4096, // embed description 한도
-  );
-
   try {
-    await sendDiscordEmbed(webhook, {
-      title: `${weekly ? "📆 GitHub Weekly" : "📰 GitHub"} Trending(${date})`,
-      url: archiveUrl,
-      color: 0x5865f2,
-      description,
-      footer: { text: "trending-newsletter" },
-    });
+    const embed = renderDiscordEmbed(items, { date, since, trend, archiveUrl });
+    await sendDiscordEmbed(webhook, embed);
     console.log("[discord] 발송 완료");
   } catch (err) {
     console.warn(`[discord] 발송 실패: ${err.message}`);
   }
-}
-
-/** @param {string} s @param {number} max */
-function clip(s, max) {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
 main().catch((err) => {

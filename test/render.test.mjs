@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderNewsletter } from "../src/render.mjs";
+import { renderDiscordEmbed, renderNewsletter } from "../src/render.mjs";
 
-function item(name, roles, reason = `${name} 추천 이유`) {
+function item(name = "tool", overrides = {}) {
   return {
     repo: {
       repo: `org/${name}`,
@@ -10,66 +10,108 @@ function item(name, roles, reason = `${name} 추천 이유`) {
       language: "JavaScript",
       stars: 100,
       starsToday: 10,
-      description: `${name} 설명`,
+      description: `${name} description`,
     },
     summary: {
-      koDescription: `${name} 설명`,
-      overview: `${name} 개요`,
-      quickStart: "",
-      roles,
-      recommendReason: reason,
+      koDescription: `${name} 핵심 설명`,
+      summary: `${name} 무엇인지 상세 설명`,
+      useCases: `${name} 활용처 상세 설명`,
+      considerations: `${name} 도입 전 확인사항`,
+      ...overrides,
     },
   };
 }
 
-function recommendationSection(markdown) {
-  return markdown.split("> 총", 1)[0];
-}
-
-test("여러 유효 직군의 레포는 공통에 한 번만 순서대로 나오고 단일 직군 레포는 해당 직군에 남는다", () => {
-  let markdown;
-  assert.doesNotThrow(() => {
-    markdown = renderNewsletter(
-      [
-        item("shared-first", ["frontend", "backend"], "첫 번째 공통 추천 이유"),
-        item("shared-second", ["frontend", "backend"], "두 번째 공통 추천 이유"),
-        item("frontend-only", ["frontend"]),
-        item("unassigned", []),
-        item("roles-undefined", undefined),
-        item("roles-not-array", "frontend"),
-      ],
-      { date: "2026-07-31" },
-    );
-  });
-  const section = recommendationSection(markdown);
-
-  assert.ok(section.indexOf("- **🌐 공통**") < section.indexOf("- **🧑‍💻 프론트엔드**"));
-  assert.equal(section.match(/\[org\/shared-first\]/g)?.length, 1);
-  assert.equal(section.match(/\[org\/shared-second\]/g)?.length, 1);
-  assert.ok(section.indexOf("[org/shared-first]") < section.indexOf("[org/shared-second]"));
-  assert.match(
-    section,
-    /- \*\*🌐 공통\*\*\n  - \[org\/shared-first\]\(https:\/\/github\.com\/org\/shared-first\) — 첫 번째 공통 추천 이유\n  - \[org\/shared-second\]\(https:\/\/github\.com\/org\/shared-second\) — 두 번째 공통 추천 이유/,
-  );
-  assert.match(section, /- \*\*🧑‍💻 프론트엔드\*\*[\s\S]*\[org\/frontend-only\]/);
-  assert.doesNotMatch(section, /\[org\/unassigned\]/);
-  assert.doesNotMatch(section, /\[org\/roles-undefined\]/);
-  assert.doesNotMatch(section, /\[org\/roles-not-array\]/);
-  assert.doesNotMatch(section, /- \*\*⚙️ 백엔드\/인프라\*\*/);
-});
-
-test("중복되거나 알 수 없는 역할은 공통 판정 개수를 늘리지 않는다", () => {
+test("archive는 상세 분석만 표시하고 추천과 Quick Start를 제거한다", () => {
   const markdown = renderNewsletter(
     [
-      item("duplicate", ["frontend", "frontend", "unknown"]),
-      item("unknown-only", ["unknown"]),
+      item("tool", {
+        roles: ["backend"],
+        recommendReason: "백엔드 추천 이유",
+        quickStart: "npm install",
+      }),
     ],
-    { date: "2026-07-31" },
+    { date: "2026-08-10", since: "daily", trend: "오늘의 흐름 본문" },
   );
-  const section = recommendationSection(markdown);
 
-  assert.doesNotMatch(section, /- \*\*🌐 공통\*\*/);
-  assert.equal(section.match(/\[org\/duplicate\]/g)?.length, 1);
-  assert.match(section, /- \*\*🧑‍💻 프론트엔드\*\*[\s\S]*\[org\/duplicate\]/);
-  assert.doesNotMatch(section, /\[org\/unknown-only\]/);
+  assert.match(markdown, /\*\*무엇인가\*\*[\s\S]*tool 무엇인지 상세 설명/);
+  assert.match(markdown, /\*\*어디에 쓰나\*\*[\s\S]*tool 활용처 상세 설명/);
+  assert.match(markdown, /\*\*살펴볼 점\*\*[\s\S]*tool 도입 전 확인사항/);
+  assert.doesNotMatch(
+    markdown,
+    /직군별 추천|바로 써보기|백엔드 추천 이유|npm install/,
+  );
+});
+
+test("고려사항이 없으면 살펴볼 점 라벨을 생략한다", () => {
+  const markdown = renderNewsletter([item("tool", { considerations: "" })], {
+    date: "2026-08-10",
+  });
+
+  assert.doesNotMatch(markdown, /살펴볼 점/);
+});
+
+test("daily와 weekly 제목 및 흐름 라벨을 유지한다", () => {
+  const daily = renderNewsletter([item()], {
+    date: "2026-08-10",
+    since: "daily",
+    trend: "daily trend",
+  });
+  const weekly = renderNewsletter([item()], {
+    date: "2026-08-10",
+    since: "weekly",
+    trend: "weekly trend",
+  });
+
+  assert.match(daily, /^# GitHub Trending\(2026-08-10\)/);
+  assert.match(daily, /## 📊 오늘의 흐름/);
+  assert.match(weekly, /^# GitHub Weekly Trending\(2026-08-10\)/);
+  assert.match(weekly, /## 📊 이번 주의 흐름/);
+});
+
+const discordOptions = {
+  date: "2026-08-10",
+  since: "weekly",
+  trend: "이번 주의 흐름 본문",
+  archiveUrl: "https://github.com/acme/news/blob/main/archive/weekly/2026-08-10.md",
+};
+
+test("Discord는 상위 5개 상세 분석과 전체 분석 링크를 표시한다", () => {
+  const items = ["first", "second", "third", "fourth", "fifth", "sixth"].map((name) =>
+    item(name),
+  );
+
+  const embed = renderDiscordEmbed(items, discordOptions);
+
+  assert.match(embed.title, /GitHub Weekly/);
+  assert.equal(embed.url, discordOptions.archiveUrl);
+  assert.match(embed.description, /이번 주의 흐름 본문/);
+  assert.match(embed.description, /first 무엇인지 상세 설명[\s\S]*first 활용처 상세 설명/);
+  assert.match(embed.description, /전체 상세 분석 보기/);
+  assert.doesNotMatch(embed.description, /직군별 추천|Quick Start|바로 써보기/);
+  assert.doesNotMatch(embed.description, /org\/sixth/);
+});
+
+test("Discord 제한 안에서 archive 링크를 보존한다", () => {
+  const longText = "상세 분석 ".repeat(1_000);
+  const items = ["first", "second", "third", "fourth", "fifth"].map((name) =>
+    item(name, { summary: longText, useCases: longText }),
+  );
+
+  const embed = renderDiscordEmbed(items, discordOptions);
+
+  assert.ok(embed.description.length <= 4096);
+  assert.match(embed.description, /전체 상세 분석 보기/);
+  assert.ok(embed.description.endsWith(`(${discordOptions.archiveUrl})`));
+});
+
+test("Discord 외부 분석의 코드 포맷이 archive 링크를 감싸지 못하게 한다", () => {
+  const codeFence = "```bash\nnpm install\n```";
+  const embed = renderDiscordEmbed(
+    [item("tool", { summary: codeFence.repeat(500), useCases: "`inline code`" })],
+    { ...discordOptions, trend: "`weekly trend`" },
+  );
+
+  assert.doesNotMatch(embed.description, /`/);
+  assert.ok(embed.description.endsWith(`(${discordOptions.archiveUrl})`));
 });
