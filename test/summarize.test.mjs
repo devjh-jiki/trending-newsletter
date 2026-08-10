@@ -74,7 +74,7 @@ test("README 전체를 외부 자료로 구분해 전달하고 상세 분석을 
     {
       koDescription: "핵심 설명",
       summary: "프로젝트 분석",
-      useCases: "활용 분석",
+      useCases: ["개발팀 — 기능 구현", "운영팀 — 자동화"],
       considerations: "도입 고려사항",
       roles: ["backend"],
       quickStart: "npm install",
@@ -92,27 +92,55 @@ test("README 전체를 외부 자료로 구분해 전달하고 상세 분석을 
   assert.ok(userMessage.includes(readme));
   assert.match(userMessage, /README 시작[\s\S]*README 끝/);
   assert.match(systemMessage, /README[\s\S]*지시[\s\S]*따르지/);
+  assert.match(systemMessage, /2~4개/);
+  assert.doesNotMatch(systemMessage, /considerations|도입 전 확인사항/);
   assert.deepEqual(result, {
     koDescription: "핵심 설명",
     summary: "프로젝트 분석",
-    useCases: "활용 분석",
-    considerations: "도입 고려사항",
+    useCases: ["개발팀 — 기능 구현", "운영팀 — 자동화"],
   });
 });
 
-test("누락되거나 문자열이 아닌 상세 필드는 빈 문자열로 정규화한다", async () => {
+test("누락되거나 타입이 잘못된 상세 필드는 빈 값으로 정규화한다", async () => {
   mockLlmResponse({
     koDescription: 42,
     summary: null,
-    useCases: [],
+    useCases: "문자열",
     considerations: {},
   });
 
   assert.deepEqual(await summarizeRepo(repo(), "# readme"), {
     koDescription: repo().description,
     summary: "",
-    useCases: "",
-    considerations: "",
+    useCases: [],
+  });
+});
+
+test("활용 사례는 문자열만 정리해 최대 4개로 정규화한다", async () => {
+  mockLlmResponse({
+    koDescription: "한 줄 설명",
+    summary: "핵심 요약",
+    useCases: [
+      " 개발팀 — 기능 구현 ",
+      42,
+      "",
+      "마케팅팀 — 캠페인",
+      "운영팀 — 자동화",
+      "보안팀 — 점검",
+      "초과 항목",
+    ],
+    considerations: "렌더링되면 안 됨",
+  });
+
+  assert.deepEqual(await summarizeRepo(repo(), "# readme"), {
+    koDescription: "한 줄 설명",
+    summary: "핵심 요약",
+    useCases: [
+      "개발팀 — 기능 구현",
+      "마케팅팀 — 캠페인",
+      "운영팀 — 자동화",
+      "보안팀 — 점검",
+    ],
   });
 });
 
@@ -120,8 +148,7 @@ test("fallback도 새 Summary 스키마를 사용한다", () => {
   assert.deepEqual(fallbackSummary(repo()), {
     koDescription: repo().description,
     summary: "(상세 분석을 생성하지 못했습니다)",
-    useCases: "",
-    considerations: "",
+    useCases: [],
   });
 });
 
@@ -152,8 +179,7 @@ test("Anthropic 상세 분석에 4096 출력 토큰을 허용한다", async () =
           text: JSON.stringify({
             koDescription: "핵심 설명",
             summary: "상세 분석",
-            useCases: "활용 분석",
-            considerations: "",
+            useCases: ["개발팀 — 기능 구현"],
           }),
         },
       ],

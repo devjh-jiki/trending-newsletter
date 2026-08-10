@@ -41,21 +41,15 @@ export function renderNewsletter(items, opts = {}) {
       lines.push("");
     }
     if (summary.summary) {
-      lines.push("**무엇인가**");
+      lines.push("### 🔎 핵심");
       lines.push("");
       lines.push(summary.summary);
       lines.push("");
     }
-    if (summary.useCases) {
-      lines.push("**어디에 쓰나**");
+    if (summary.useCases.length) {
+      lines.push("### 🎯 활용 사례");
       lines.push("");
-      lines.push(summary.useCases);
-      lines.push("");
-    }
-    if (summary.considerations) {
-      lines.push("**살펴볼 점**");
-      lines.push("");
-      lines.push(summary.considerations);
+      lines.push(...summary.useCases.map((useCase) => `- ${useCase}`));
       lines.push("");
     }
     lines.push("---");
@@ -90,8 +84,10 @@ export function renderDiscordEmbed(items, opts) {
         `**${index + 1}. [${item.repo.repo}](${item.repo.url})${lang} ⭐${item.repo.stars.toLocaleString()}**`,
       ];
       if (item.summary.summary) lines.push(plainDiscordText(item.summary.summary));
-      if (item.summary.useCases) {
-        lines.push(`**어디에 쓰나** ${plainDiscordText(item.summary.useCases)}`);
+      const useCases = item.summary.useCases.slice(0, 2);
+      if (useCases.length) {
+        lines.push("**활용 사례**");
+        lines.push(...useCases.map((useCase) => `- ${plainDiscordText(useCase)}`));
       }
       return lines.join("\n");
     })
