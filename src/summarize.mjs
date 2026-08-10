@@ -143,13 +143,16 @@ async function callAnthropic(system, user) {
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
-      max_tokens: 1024,
+      max_tokens: 4096,
       system,
       messages: [{ role: "user", content: user }],
     }),
   });
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  if (data?.stop_reason === "max_tokens") {
+    throw new Error("Anthropic 응답 잘림 (max_tokens)");
+  }
   // content 는 블록 배열이며 text 외 타입이 섞일 수 있다. text 블록만 모아서 합친다.
   const text = (data?.content ?? [])
     .filter((block) => block.type === "text")
@@ -202,7 +205,7 @@ async function callOpenAICompatible(system, user, cfg) {
 export function fallbackSummary(repo) {
   return {
     koDescription: repo.description || "(설명 없음 — 번역 생략)",
-    summary: "(LLM 키 없음 — 상세 분석 생략)",
+    summary: "(상세 분석을 생성하지 못했습니다)",
     useCases: "",
     considerations: "",
   };

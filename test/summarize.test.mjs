@@ -119,7 +119,7 @@ test("누락되거나 문자열이 아닌 상세 필드는 빈 문자열로 정�
 test("fallback도 새 Summary 스키마를 사용한다", () => {
   assert.deepEqual(fallbackSummary(repo()), {
     koDescription: repo().description,
-    summary: "(LLM 키 없음 — 상세 분석 생략)",
+    summary: "(상세 분석을 생성하지 못했습니다)",
     useCases: "",
     considerations: "",
   });
@@ -131,6 +131,61 @@ test("JSON 파싱 오류에 외부 README 내용을 포함하지 않는다", asy
 
   await assert.rejects(summarizeRepo(repo(), "# readme"), (error) => {
     assert.equal(error.message, "요약 JSON 파싱 실패");
+    assert.doesNotMatch(error.message, new RegExp(sensitiveFragment));
+    return true;
+  });
+});
+
+test("Anthropic 상세 분석에 4096 출력 토큰을 허용한다", async () => {
+  process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return Response.json({
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            koDescription: "핵심 설명",
+            summary: "상세 분석",
+            useCases: "활용 분석",
+            considerations: "",
+          }),
+        },
+      ],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 100, output_tokens: 200 },
+    });
+  };
+
+  const result = await summarizeRepo(repo(), "# readme");
+
+  assert.equal(requestBody.max_tokens, 4096);
+  assert.equal(result.summary, "상세 분석");
+});
+
+test("Anthropic max_tokens 응답을 내용 노출 없이 잘림 오류로 처리한다", async () => {
+  process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+  const sensitiveFragment = "PRIVATE_README_FRAGMENT";
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "msg_truncated",
+      type: "message",
+      role: "assistant",
+      model: "claude-haiku-4-5",
+      content: [{ type: "text", text: `truncated ${sensitiveFragment}` }],
+      stop_reason: "max_tokens",
+      stop_sequence: null,
+      usage: { input_tokens: 100, output_tokens: 1024 },
+    });
+
+  await assert.rejects(summarizeRepo(repo(), "# readme"), (error) => {
+    assert.equal(error.message, "Anthropic 응답 잘림 (max_tokens)");
     assert.doesNotMatch(error.message, new RegExp(sensitiveFragment));
     return true;
   });
